@@ -1,4 +1,6 @@
 using System;
+using Hangfire;
+using Hangfire.MemoryStorage;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -20,14 +22,27 @@ public class Program
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            var services = builder.Services;
+            var configuration = builder.Configuration;
+
             // Add Serilog (read config from appsettings.json)
             builder.Host.UseSerilog((context, services, configuration) => configuration
                 .ReadFrom.Configuration(context.Configuration)
                 .ReadFrom.Services(services)
                 .Enrich.FromLogContext());
 
-            builder.Services.AddControllers();
-            builder.Services.AddOpenApi(); // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+            // Add Hangfire services.
+            services.AddHangfire(configuration => configuration
+                .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+                .UseSimpleAssemblyNameTypeSerializer()
+                .UseRecommendedSerializerSettings()
+                .UseMemoryStorage());
+
+            // Add the processing server as IHostedService
+            services.AddHangfireServer();
+
+            services.AddControllers();
+            services.AddOpenApi(); // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 
             var app = builder.Build();
             app.UseSerilogRequestLogging();
@@ -39,7 +54,9 @@ public class Program
                 app.MapScalarApiReference();
             }
 
+            app.UseAuthentication();
             app.UseAuthorization();
+            app.UseHangfireDashboard();
             app.MapControllers();
             app.Run();
         }
